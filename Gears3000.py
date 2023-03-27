@@ -1,3 +1,4 @@
+import adsk.core, adsk.fusion, adsk.cam, traceback
 
 def run(context):
     ui = None
@@ -37,6 +38,13 @@ def onCommandCreated(args):
         # Create a checkbox input for helical gears.
         helicalCheckbox = inputs.addBoolValueInput('helicalCheckbox', 'Helical Gears', True)
 
+        # Create inputs for new options.
+        thicknessInput = inputs.addValueInput('thickness', 'Thickness', 'mm', adsk.core.ValueInput.createByReal(1))
+        holeDiameterInput = inputs.addValueInput('holeDiameter', 'Hole Diameter', 'mm', adsk.core.ValueInput.createByReal(1))
+        backlashInput = inputs.addValueInput('backlash', 'Backlash', 'mm', adsk.core.ValueInput.createByReal(0.1))
+        pressureAngleInput = inputs.addValueInput('pressureAngle', 'Pressure Angle', 'deg', adsk.core.ValueInput.createByReal(20))
+        moduleInput = inputs.addValueInput('module', 'Module', 'mm', adsk.core.ValueInput.createByReal(1))
+
         # Connect to the execute event.
         command.execute.add(onExecute)
     except:
@@ -54,12 +62,19 @@ def onExecute(args):
         helicalCheckbox = args.command.commandInputs.itemById('helicalCheckbox')
         isHelical = helicalCheckbox.value
 
+        # Get the new option values.
+        thickness = args.command.commandInputs.itemById('thickness').value
+        holeDiameter = args.command.commandInputs.itemById('holeDiameter').value
+        backlash = args.command.commandInputs.itemById('backlash').value
+        pressureAngle = args.command.commandInputs.itemById('pressureAngle').value
+        module = args.command.commandInputs.itemById('module').value
+
         # Create gears based on the selected circles.
-        createGears(selectedCircles, isHelical)
+        createGears(selectedCircles, isHelical, thickness, holeDiameter, backlash, pressureAngle, module)
     except:
         ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
-def createGears(selectedCircles, isHelical):
+def createGears(selectedCircles, isHelical, thickness, holeDiameter, backlash, pressureAngle, module):
     try:
         app = adsk.core.Application.get()
         ui  = app.userInterface
@@ -79,11 +94,11 @@ def createGears(selectedCircles, isHelical):
             sketch.project(circle)
 
             # Create the gear based on the projected circle.
-            createGear(sketch, circle, isHelical)
+            createGear(sketch, circle, isHelical, thickness, holeDiameter, backlash, pressureAngle, module)
     except:
         ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
-def createGear(sketch, circle, isHelical):
+def createGear(sketch, circle, isHelical, thickness, holeDiameter, backlash, pressureAngle, module):
     try:
         app = adsk.core.Application.get()
         ui  = app.userInterface
@@ -94,18 +109,18 @@ def createGear(sketch, circle, isHelical):
 
         # Create an extrude feature for the gear.
         extrudes = design.rootComponent.features.extrudeFeatures
-        gearExtrude = extrudes.addSimple(gearProfile, adsk.core.ValueInput.createByReal(1), adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+        gearExtrude = extrudes.addSimple(gearProfile, adsk.core.ValueInput.createByReal(thickness), adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
 
         # Rename the gear body.
         gearExtrude.bodies.item(0).name = "Gear"
 
         # Create helical gear if requested.
         if isHelical:
-            createHelicalGear(gearExtrude)
+            createHelicalGear(gearExtrude, thickness, holeDiameter, backlash, pressureAngle, module)
     except:
         ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
-def createHelicalGear(gearExtrude):
+def createHelicalGear(gearExtrude, thickness, holeDiameter, backlash, pressureAngle, module):
     try:
         app = adsk.core.Application.get()
         ui  = app.userInterface
@@ -116,9 +131,9 @@ def createHelicalGear(gearExtrude):
         coilInput = coils.createInput(gearExtrude.bodies.item(0), adsk.fusion.CoilFeatureOperations.CutFeatureOperation)
 
         # Set the coil parameters.
-        coilInput.height = adsk.core.ValueInput.createByReal(1)
-        coilInput.diameter = adsk.core.ValueInput.createByReal(1)
-        coilInput.pitch = adsk.core.ValueInput.createByReal(0.1)
+        coilInput.height = adsk.core.ValueInput.createByReal(thickness)
+        coilInput.diameter = adsk.core.ValueInput.createByReal(holeDiameter)
+        coilInput.pitch = adsk.core.ValueInput.createByReal(backlash)
         coilInput.isClockwise = True
         coilInput.isSolid = False
 
