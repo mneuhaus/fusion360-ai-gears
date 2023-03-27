@@ -1,4 +1,3 @@
-import adsk.core, adsk.fusion, adsk.cam, traceback
 
 def run(context):
     ui = None
@@ -35,6 +34,9 @@ def onCommandCreated(args):
         circleSelection = inputs.addSelectionInput('circleSelection', 'Select Circles', 'Select the sketch circles to create gears')
         circleSelection.setSelectionLimits(1)
 
+        # Create a checkbox input for helical gears.
+        helicalCheckbox = inputs.addBoolValueInput('helicalCheckbox', 'Helical Gears', True)
+
         # Connect to the execute event.
         command.execute.add(onExecute)
     except:
@@ -49,13 +51,15 @@ def onExecute(args):
         # Get the input values.
         circleSelection = args.command.commandInputs.itemById('circleSelection')
         selectedCircles = circleSelection.selection(0)
+        helicalCheckbox = args.command.commandInputs.itemById('helicalCheckbox')
+        isHelical = helicalCheckbox.value
 
         # Create gears based on the selected circles.
-        createGears(selectedCircles)
+        createGears(selectedCircles, isHelical)
     except:
         ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
-def createGears(selectedCircles):
+def createGears(selectedCircles, isHelical):
     try:
         app = adsk.core.Application.get()
         ui  = app.userInterface
@@ -75,11 +79,11 @@ def createGears(selectedCircles):
             sketch.project(circle)
 
             # Create the gear based on the projected circle.
-            createGear(sketch, circle)
+            createGear(sketch, circle, isHelical)
     except:
         ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
-def createGear(sketch, circle):
+def createGear(sketch, circle, isHelical):
     try:
         app = adsk.core.Application.get()
         ui  = app.userInterface
@@ -94,6 +98,35 @@ def createGear(sketch, circle):
 
         # Rename the gear body.
         gearExtrude.bodies.item(0).name = "Gear"
+
+        # Create helical gear if requested.
+        if isHelical:
+            createHelicalGear(gearExtrude)
+    except:
+        ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
+
+def createHelicalGear(gearExtrude):
+    try:
+        app = adsk.core.Application.get()
+        ui  = app.userInterface
+        design = app.activeProduct
+
+        # Create a coil feature for the helical gear.
+        coils = design.rootComponent.features.coilFeatures
+        coilInput = coils.createInput(gearExtrude.bodies.item(0), adsk.fusion.CoilFeatureOperations.CutFeatureOperation)
+
+        # Set the coil parameters.
+        coilInput.height = adsk.core.ValueInput.createByReal(1)
+        coilInput.diameter = adsk.core.ValueInput.createByReal(1)
+        coilInput.pitch = adsk.core.ValueInput.createByReal(0.1)
+        coilInput.isClockwise = True
+        coilInput.isSolid = False
+
+        # Create the helical gear.
+        helicalGear = coils.add(coilInput)
+
+        # Rename the helical gear body.
+        helicalGear.bodies.item(0).name = "Helical Gear"
     except:
         ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
