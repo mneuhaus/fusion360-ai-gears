@@ -1,6 +1,7 @@
 import adsk.core
 import adsk.fusion
 import traceback
+import math
 
 def run(context):
     ui = None
@@ -111,27 +112,26 @@ def createGear(sketch, circle, isHelical, isBevel, thickness, holeDiameter, back
         ui  = app.userInterface
         design = app.activeProduct
 
-        # Create the gear profile.
-        gearProfile = sketch.profiles.item(0)
+        # Calculate the number of teeth based on the module and circle diameter
+        numTeeth = int(circle.geometry.radius * 2 / module)
 
-        # Create an extrude feature for the gear.
-        extrudes = design.rootComponent.features.extrudeFeatures
-        gearExtrude = extrudes.addSimple(gearProfile, adsk.core.ValueInput.createByReal(thickness), adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+        # Calculate the diametral pitch based on the module
+        diametralPitch = numTeeth / (circle.geometry.radius * 2)
 
-        # Rename the gear body.
-        gearExtrude.bodies.item(0).name = "Gear"
+        # Create the gear using the drawGear function
+        gear = drawGear(design, diametralPitch, numTeeth, thickness, 0, pressureAngle, backlash, holeDiameter)
 
         # Create helical gear if requested.
         if isHelical:
-            createHelicalGear(gearExtrude, thickness, holeDiameter, backlash, pressureAngle, module)
+            createHelicalGear(gear, thickness, holeDiameter, backlash, pressureAngle, module)
 
         # Create bevel gear if requested.
         if isBevel:
-            createBevelGear(gearExtrude, thickness, holeDiameter, backlash, pressureAngle, module)
+            createBevelGear(gear, thickness, holeDiameter, backlash, pressureAngle, module)
     except:
         ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
-def createHelicalGear(gearExtrude, thickness, holeDiameter, backlash, pressureAngle, module):
+def createHelicalGear(gear, thickness, holeDiameter, backlash, pressureAngle, module):
     try:
         app = adsk.core.Application.get()
         ui  = app.userInterface
@@ -139,7 +139,7 @@ def createHelicalGear(gearExtrude, thickness, holeDiameter, backlash, pressureAn
 
         # Create a coil feature for the helical gear.
         coils = design.rootComponent.features.coilFeatures
-        coilInput = coils.createInput(gearExtrude.bodies.item(0), adsk.fusion.CoilFeatureOperations.CutFeatureOperation)
+        coilInput = coils.createInput(gear.bodies.item(0), adsk.fusion.CoilFeatureOperations.CutFeatureOperation)
 
         # Set the coil parameters.
         coilInput.height = adsk.core.ValueInput.createByReal(thickness)
@@ -156,7 +156,7 @@ def createHelicalGear(gearExtrude, thickness, holeDiameter, backlash, pressureAn
     except:
         ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
-def createBevelGear(gearExtrude, thickness, holeDiameter, backlash, pressureAngle, module):
+def createBevelGear(gear, thickness, holeDiameter, backlash, pressureAngle, module):
     try:
         app = adsk.core.Application.get()
         ui  = app.userInterface
@@ -164,7 +164,7 @@ def createBevelGear(gearExtrude, thickness, holeDiameter, backlash, pressureAngl
 
         # Create a draft feature for the bevel gear.
         drafts = design.rootComponent.features.draftFeatures
-        draftInput = drafts.createInput(gearExtrude.bodies.item(0), adsk.core.ValueInput.createByReal(pressureAngle))
+        draftInput = drafts.createInput(gear.bodies.item(0), adsk.core.ValueInput.createByReal(pressureAngle))
 
         # Set the draft parameters.
         draftInput.isTangentChain = True
@@ -177,3 +177,97 @@ def createBevelGear(gearExtrude, thickness, holeDiameter, backlash, pressureAngl
     except:
         ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
+# Calculate points along an involute curve.
+def involutePoint(baseCircleRadius, distFromCenterToInvolutePoint):
+    try:
+        # Calculate the other side of the right-angle triangle defined by the base circle and the current distance radius.
+        # This is also the length of the involute chord as it comes off of the base circle.
+        triangleSide = math.sqrt(math.pow(distFromCenterToInvolutePoint,2) - math.pow(baseCircleRadius,2)) 
+        
+        # Calculate the angle of the involute.
+        alpha = triangleSide / baseCircleRadius
+
+        # Calculate the angle where the current involute point is.
+        theta = alpha - math.acos(baseCircleRadius / distFromCenterToInvolutePoint)
+
+        # Calculate the coordinates of the involute point.    
+        x = distFromCenterToInvolutePoint * math.cos(theta)
+        y = distFromCenterToInvolutePoint * math.sin(theta)
+
+        # Create a point to return.        
+        return adsk.core.Point3D.create(x, y, 0)
+    except:
+        if _ui:
+            _ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
+
+# Builds a spur gear.
+def drawGear(design, diametralPitch, numTeeth, thickness, rootFilletRad, pressureAngle, backlash, holeDiam):
+    try:
+        # The diametral pitch is specified in inches but everthing
+        # here expects all distances to be in centimeters, so convert
+        # for the gear creation.
+        diametralPitch = diametralPitch / 2.54
+    
+        # Compute the various values for a gear.
+        pitchDia = numTeeth / diametralPitch
+        
+        if (diametralPitch < (20 *(math.pi/180))-0.000001):
+            dedendum = 1.157 / diametralPitch
+        else:
+            circularPitch = math.pi / diametralPitch
+            if circularPitch >= 20:
+                dedendum = 1.25 / diametralPitch
+            else:
+                dedendum = (1.2 / diametralPitch) + (.002 * 2.54)                
+
+        rootDia = pitchDia - (2 * dedendum)
+        
+        baseCircleDia = pitchDia * math.cos(pressureAngle)
+        outsideDia = (numTeeth + 2) / diametralPitch
+        
+        # Create a new component by creating an occurrence.
+        occs = design.rootComponent.occurrences
+        mat = adsk.core.Matrix3D.create()
+        newOcc = occs.addNewComponent(mat)        
+        newComp = adsk.fusion.Component.cast(newOcc.component)
+        
+        # Create a new sketch.
+        sketches = newComp.sketches
+        xyPlane = newComp.xYConstructionPlane
+        baseSketch = sketches.add(xyPlane)
+
+        # Draw a circle for the base.
+        baseSketch.sketchCurves.sketchCircles.addByCenterRadius(adsk.core.Point3D.create(0,0,0), rootDia/2.0)
+        
+        # Draw a circle for the center hole, if the value is greater than 0.
+        prof = adsk.fusion.Profile.cast(None)
+        if holeDiam - (_app.pointTolerance * 2) > 0:
+            baseSketch.sketchCurves.sketchCircles.addByCenterRadius(adsk.core.Point3D.create(0,0,0), holeDiam/2.0)
+
+            # Find the profile that uses both circles.
+            for prof in baseSketch.profiles:
+                if prof.profileLoops.count == 2:
+                    break
+        else:
+            # Use the single profile.
+            prof = baseSketch.profiles.item(0)
+        
+        #### Extrude the circle to create the base of the gear.
+
+        # Create an extrusion input to be able to define the input needed for an extrusion
+        # while specifying the profile and that a new component is to be created
+        extrudes = newComp.features.extrudeFeatures
+        extInput = extrudes.createInput(prof, adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+
+        # Define that the extent is a distance extent of 5 cm.
+        distance = adsk.core.ValueInput.createByReal(thickness)
+        extInput.setDistanceExtent(False, distance)
+
+        # Create the extrusion.
+        baseExtrude = extrudes.add(extInput)
+        
+        # Create a second sketch for the tooth.
+        toothSketch = sketches.add(xyPlane)
+
+        # Calculate points along the involute curve.
+        involutePointCount = 
