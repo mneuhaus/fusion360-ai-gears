@@ -1,4 +1,3 @@
-import adsk.core, adsk.fusion, adsk.cam, traceback
 
 def run(context):
     ui = None
@@ -38,6 +37,9 @@ def onCommandCreated(args):
         # Create a checkbox input for helical gears.
         helicalCheckbox = inputs.addBoolValueInput('helicalCheckbox', 'Helical Gears', True)
 
+        # Create a checkbox input for bevel gears.
+        bevelCheckbox = inputs.addBoolValueInput('bevelCheckbox', 'Bevel Gears', False)
+
         # Create inputs for new options.
         thicknessInput = inputs.addValueInput('thickness', 'Thickness', 'mm', adsk.core.ValueInput.createByReal(1))
         holeDiameterInput = inputs.addValueInput('holeDiameter', 'Hole Diameter', 'mm', adsk.core.ValueInput.createByReal(1))
@@ -61,6 +63,8 @@ def onExecute(args):
         selectedCircles = circleSelection.selection(0)
         helicalCheckbox = args.command.commandInputs.itemById('helicalCheckbox')
         isHelical = helicalCheckbox.value
+        bevelCheckbox = args.command.commandInputs.itemById('bevelCheckbox')
+        isBevel = bevelCheckbox.value
 
         # Get the new option values.
         thickness = args.command.commandInputs.itemById('thickness').value
@@ -70,11 +74,11 @@ def onExecute(args):
         module = args.command.commandInputs.itemById('module').value
 
         # Create gears based on the selected circles.
-        createGears(selectedCircles, isHelical, thickness, holeDiameter, backlash, pressureAngle, module)
+        createGears(selectedCircles, isHelical, isBevel, thickness, holeDiameter, backlash, pressureAngle, module)
     except:
         ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
-def createGears(selectedCircles, isHelical, thickness, holeDiameter, backlash, pressureAngle, module):
+def createGears(selectedCircles, isHelical, isBevel, thickness, holeDiameter, backlash, pressureAngle, module):
     try:
         app = adsk.core.Application.get()
         ui  = app.userInterface
@@ -94,11 +98,11 @@ def createGears(selectedCircles, isHelical, thickness, holeDiameter, backlash, p
             sketch.project(circle)
 
             # Create the gear based on the projected circle.
-            createGear(sketch, circle, isHelical, thickness, holeDiameter, backlash, pressureAngle, module)
+            createGear(sketch, circle, isHelical, isBevel, thickness, holeDiameter, backlash, pressureAngle, module)
     except:
         ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
-def createGear(sketch, circle, isHelical, thickness, holeDiameter, backlash, pressureAngle, module):
+def createGear(sketch, circle, isHelical, isBevel, thickness, holeDiameter, backlash, pressureAngle, module):
     try:
         app = adsk.core.Application.get()
         ui  = app.userInterface
@@ -117,6 +121,10 @@ def createGear(sketch, circle, isHelical, thickness, holeDiameter, backlash, pre
         # Create helical gear if requested.
         if isHelical:
             createHelicalGear(gearExtrude, thickness, holeDiameter, backlash, pressureAngle, module)
+
+        # Create bevel gear if requested.
+        if isBevel:
+            createBevelGear(gearExtrude, thickness, holeDiameter, backlash, pressureAngle, module)
     except:
         ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
@@ -142,6 +150,27 @@ def createHelicalGear(gearExtrude, thickness, holeDiameter, backlash, pressureAn
 
         # Rename the helical gear body.
         helicalGear.bodies.item(0).name = "Helical Gear"
+    except:
+        ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
+
+def createBevelGear(gearExtrude, thickness, holeDiameter, backlash, pressureAngle, module):
+    try:
+        app = adsk.core.Application.get()
+        ui  = app.userInterface
+        design = app.activeProduct
+
+        # Create a draft feature for the bevel gear.
+        drafts = design.rootComponent.features.draftFeatures
+        draftInput = drafts.createInput(gearExtrude.bodies.item(0), adsk.core.ValueInput.createByReal(pressureAngle))
+
+        # Set the draft parameters.
+        draftInput.isTangentChain = True
+
+        # Create the bevel gear.
+        bevelGear = drafts.add(draftInput)
+
+        # Rename the bevel gear body.
+        bevelGear.bodies.item(0).name = "Bevel Gear"
     except:
         ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
