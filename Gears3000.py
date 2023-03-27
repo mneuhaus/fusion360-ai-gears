@@ -1,3 +1,6 @@
+import adsk.core
+import adsk.fusion
+import traceback
 
 def run(context):
     ui = None
